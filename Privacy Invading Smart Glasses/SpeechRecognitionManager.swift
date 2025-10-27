@@ -16,7 +16,9 @@ class SpeechRecognitionManager: NSObject, ObservableObject {
     @Published var isRecording = false
     @Published var isAuthorized = false
     @Published var errorMessage: String?
-    
+    @Published var availableAudioInputs: [AVAudioSessionPortDescription] = []
+    @Published var currentAudioInput: AVAudioSessionPortDescription?
+
     private var audioEngine = AVAudioEngine()
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -27,11 +29,75 @@ class SpeechRecognitionManager: NSObject, ObservableObject {
         // Initialize with the device's preferred language
         speechRecognizer = SFSpeechRecognizer()
         speechRecognizer?.delegate = self
+
+        // Observe audio route changes (device plug/unplug)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc nonisolated private func handleAudioRouteChange(notification: Notification) {
+        Task { @MainActor in
+            print("Audio route changed, rediscovering inputs...")
+            await discoverAudioInputs()
+        }
     }
     
     func setup() {
         Task {
             await requestPermissions()
+            await discoverAudioInputs()
+        }
+    }
+
+    func discoverAudioInputs() async {
+        let audioSession = AVAudioSession.sharedInstance()
+
+        // Get available audio inputs
+        let inputs = audioSession.availableInputs ?? []
+
+        await MainActor.run {
+            self.availableAudioInputs = inputs
+
+            // Prefer USB/external microphones (from webcams)
+            let externalInput = inputs.first { input in
+                input.portType == .usbAudio
+            }
+
+            // Fallback to built-in mic if no external found
+            self.currentAudioInput = externalInput ?? inputs.first
+
+            print("Available audio inputs: \(inputs.map { "\($0.portName) (\($0.portType.rawValue))" })")
+            if let current = self.currentAudioInput {
+                print("Selected audio input: \(current.portName) (\(current.portType.rawValue))")
+            }
+        }
+    }
+
+    func selectAudioInput(_ input: AVAudioSessionPortDescription) {
+        currentAudioInput = input
+        print("Manually selected audio input: \(input.portName)")
+    }
+
+    func selectAudioInputMatchingCamera(_ camera: AVCaptureDevice) {
+        // Try to find an audio input that matches the camera name
+        // Many USB webcams expose both video and audio under similar names
+        let cameraName = camera.localizedName.lowercased()
+
+        let matchingInput = availableAudioInputs.first { input in
+            let inputName = input.portName.lowercased()
+            // Check if names share common words (e.g., "Logitech C920" camera with "Logitech C920" mic)
+            return inputName.contains(cameraName) || cameraName.contains(inputName)
+        }
+
+        if let match = matchingInput {
+            selectAudioInput(match)
+            print("Auto-matched audio input '\(match.portName)' to camera '\(camera.localizedName)'")
+        } else {
+            print("No matching audio input found for camera '\(camera.localizedName)'")
         }
     }
     
@@ -75,6 +141,13 @@ class SpeechRecognitionManager: NSObject, ObservableObject {
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.playAndRecord, mode: .measurement, options: .duckOthers)
+
+            // Set preferred audio input to external webcam mic if available
+            if let preferredInput = currentAudioInput {
+                try audioSession.setPreferredInput(preferredInput)
+                print("Set preferred audio input to: \(preferredInput.portName)")
+            }
+
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             errorMessage = "Audio session setup failed: \(error.localizedDescription)"
@@ -156,6 +229,7 @@ class SpeechRecognitionManager: NSObject, ObservableObject {
     
     deinit {
         stopRecording()
+        NotificationCenter.default.removeObserver(self)
     }
 }
 
