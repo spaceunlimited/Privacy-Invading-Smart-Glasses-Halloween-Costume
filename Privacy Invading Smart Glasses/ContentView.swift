@@ -59,7 +59,7 @@ struct ContentView: View {
                                 .font(.system(size: 24, weight: .medium))
                                 .foregroundColor(.primary)
                                 .frame(width: 70, height: 70)
-                                .background(.ultraThinMaterial, in: Circle())
+                                .glassEffect(.regular.interactive(), in: .circle)
                         }
                         .padding(.top, 60)
                         .padding(.trailing, 40)
@@ -80,7 +80,7 @@ struct ContentView: View {
                                     .multilineTextAlignment(.leading)
                                     .padding(.horizontal, 40)
                                     .padding(.vertical, 50)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
+                                    .glassEffect(.regular, in: .rect(cornerRadius: 32))
 
                                 Spacer()
                             }
@@ -110,7 +110,7 @@ struct ContentView: View {
                                     .font(.system(size: 26, weight: .medium))
                                     .foregroundColor(speechManager.isRecording ? .red : .primary)
                                     .frame(width: 70, height: 70)
-                                    .background(.ultraThinMaterial, in: Circle())
+                                    .glassEffect(.regular.interactive(), in: .circle)
                             }
                             .disabled(!speechManager.isAuthorized && !speechManager.isRecording)
                             .padding(.leading, 40)
