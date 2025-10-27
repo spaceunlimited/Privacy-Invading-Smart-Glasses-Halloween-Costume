@@ -138,6 +138,7 @@ struct ContentView: View {
                                 HStack(spacing: 8) {
                                     Text(speechManager.recognizedText)
                                         .font(.system(size: 48, weight: .regular, design: .default))
+                                        .lineLimit(3)
                                 }
                                 .foregroundStyle(.primary)
                                 .padding(.horizontal, 32)
