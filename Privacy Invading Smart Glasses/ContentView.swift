@@ -135,14 +135,14 @@ struct ContentView: View {
 
                             // Text display when recording (dynamically sized)
                             if speechManager.isRecording && !speechManager.recognizedText.isEmpty {
-                                Text(speechManager.recognizedText)
-                                    .font(.system(size: 40, weight: .regular, design: .default))
-                                    .foregroundStyle(.primary)
-                                    .multilineTextAlignment(.leading)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 40)
-                                    .padding(.vertical, 40)
-                                    .glassEffect(.regular, in: .rect(cornerRadius: 32))
+                                HStack(spacing: 8) {
+                                    Text(speechManager.recognizedText)
+                                        .font(.system(size: 48, weight: .regular, design: .default))
+                                }
+                                .foregroundStyle(.primary)
+                                .padding(.horizontal, 32)
+                                .padding(.vertical, 24)
+                                .glassEffect(.regular, in: .rect(cornerRadius: 35))
                             }
                         }
                     }
