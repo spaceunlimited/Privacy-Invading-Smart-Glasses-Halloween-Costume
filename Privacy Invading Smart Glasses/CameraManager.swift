@@ -7,6 +7,7 @@
 
 import AVFoundation
 import SwiftUI
+import Combine
 
 @MainActor
 class CameraManager: ObservableObject {
@@ -20,9 +21,6 @@ class CameraManager: ObservableObject {
     func setup() {
         Task {
             await requestPermission()
-            if isAuthorized {
-                await setupCaptureSession()
-            }
         }
     }
     
@@ -32,99 +30,124 @@ class CameraManager: ObservableObject {
             
             switch status {
             case .authorized:
-                isAuthorized = true
+                await MainActor.run {
+                    isAuthorized = true
+                }
+                await setupCaptureSession()
             case .notDetermined:
                 let granted = await AVCaptureDevice.requestAccess(for: .video)
-                isAuthorized = granted
+                await MainActor.run {
+                    isAuthorized = granted
+                }
+                if granted {
+                    await setupCaptureSession()
+                }
             case .denied, .restricted:
-                isAuthorized = false
+                await MainActor.run {
+                    isAuthorized = false
+                }
             @unknown default:
-                isAuthorized = false
-            }
-            
-            if isAuthorized {
-                await setupCaptureSession()
+                await MainActor.run {
+                    isAuthorized = false
+                }
             }
         }
     }
     
     private func setupCaptureSession() async {
-        captureSession.beginConfiguration()
-        
-        // Remove existing inputs
-        captureSession.inputs.forEach { captureSession.removeInput($0) }
-        
-        // Discover all available cameras (including external USB webcams)
-        let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [
-                .builtInWideAngleCamera,
-                .builtInUltraWideCamera,
-                .builtInTelephotoCamera,
-                .external // This captures USB webcams
-            ],
-            mediaType: .video,
-            position: .unspecified
-        )
-        
-        availableCameras = discoverySession.devices
-        
-        // Prefer external camera (USB webcam) if available
-        let preferredCamera = availableCameras.first { $0.deviceType == .external } 
-                           ?? availableCameras.first
-        
-        guard let camera = preferredCamera else {
-            print("No cameras available")
-            captureSession.commitConfiguration()
-            return
-        }
-        
-        do {
-            let input = try AVCaptureDeviceInput(device: camera)
+        // Run capture session setup on a background queue
+        await Task.detached {
+            self.captureSession.beginConfiguration()
             
-            if captureSession.canAddInput(input) {
-                captureSession.addInput(input)
-                videoInput = input
-                currentCamera = camera
-                
-                // Set session preset for best quality
-                if captureSession.canSetSessionPreset(.high) {
-                    captureSession.sessionPreset = .high
-                }
+            // Remove existing inputs
+            self.captureSession.inputs.forEach { self.captureSession.removeInput($0) }
+            
+            // Discover all available cameras (including external USB webcams)
+            let discoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: [
+                    .builtInWideAngleCamera,
+                    .builtInUltraWideCamera,
+                    .builtInTelephotoCamera,
+                    .external // This captures USB webcams
+                ],
+                mediaType: .video,
+                position: .unspecified
+            )
+            
+            let cameras = discoverySession.devices
+            
+            // Update UI on main actor
+            await MainActor.run {
+                self.availableCameras = cameras
             }
-        } catch {
-            print("Error creating camera input: \(error.localizedDescription)")
-        }
-        
-        captureSession.commitConfiguration()
-        
-        // Start the session on a background queue
-        Task.detached {
+            
+            // Prefer external camera (USB webcam) if available
+            let preferredCamera = cameras.first { $0.deviceType == .external } 
+                               ?? cameras.first
+            
+            guard let camera = preferredCamera else {
+                print("No cameras available")
+                self.captureSession.commitConfiguration()
+                return
+            }
+            
+            do {
+                let input = try AVCaptureDeviceInput(device: camera)
+                
+                if self.captureSession.canAddInput(input) {
+                    self.captureSession.addInput(input)
+                    
+                    // Update properties on main actor
+                    await MainActor.run {
+                        self.videoInput = input
+                        self.currentCamera = camera
+                    }
+                    
+                    // Set session preset for best quality
+                    if self.captureSession.canSetSessionPreset(.high) {
+                        self.captureSession.sessionPreset = .high
+                    }
+                }
+            } catch {
+                print("Error creating camera input: \(error.localizedDescription)")
+            }
+            
+            self.captureSession.commitConfiguration()
             self.captureSession.startRunning()
-        }
+        }.value
     }
     
     func switchCamera(to camera: AVCaptureDevice) {
         Task {
-            captureSession.beginConfiguration()
-            
-            // Remove current input
-            if let currentInput = videoInput {
-                captureSession.removeInput(currentInput)
-            }
-            
-            do {
-                let newInput = try AVCaptureDeviceInput(device: camera)
+            await Task.detached { [weak self] in
+                guard let self = self else { return }
                 
-                if captureSession.canAddInput(newInput) {
-                    captureSession.addInput(newInput)
-                    videoInput = newInput
-                    currentCamera = camera
+                self.captureSession.beginConfiguration()
+                
+                // Remove current input - need to get this on main actor
+                let currentInput = await MainActor.run { self.videoInput }
+                if let currentInput = currentInput {
+                    self.captureSession.removeInput(currentInput)
                 }
-            } catch {
-                print("Error switching camera: \(error.localizedDescription)")
-            }
-            
-            captureSession.commitConfiguration()
+                
+                do {
+                    let newInput = try AVCaptureDeviceInput(device: camera)
+                    
+                    if self.captureSession.canAddInput(newInput) {
+                        self.captureSession.addInput(newInput)
+                        
+                        // Update properties on main actor
+                        await MainActor.run {
+                            self.videoInput = newInput
+                            self.currentCamera = camera
+                        }
+                    }
+                } catch {
+                    print("Error switching camera: \(error.localizedDescription)")
+                }
+                
+                self.captureSession.commitConfiguration()
+            }.value
         }
     }
     
