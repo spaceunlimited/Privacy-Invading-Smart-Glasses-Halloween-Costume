@@ -169,6 +169,7 @@ struct ContentView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
         .onAppear {
             cameraManager.setup()
             speechManager.setup()
