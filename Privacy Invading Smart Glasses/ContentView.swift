@@ -11,15 +11,16 @@ import AVFoundation
 struct ContentView: View {
     @StateObject private var cameraManager = CameraManager()
     @StateObject private var speechManager = SpeechRecognitionManager()
-    @State private var showingTranscription = true
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
+                // Camera feed background
                 if cameraManager.isAuthorized {
                     CameraPreviewView(session: cameraManager.captureSession)
                         .ignoresSafeArea()
                 } else {
+                    // Permission request view
                     VStack(spacing: 20) {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 50))
@@ -41,56 +42,12 @@ struct ContentView: View {
                     .padding()
                 }
                 
-                // Speech transcription overlay
-                if showingTranscription && !speechManager.recognizedText.isEmpty {
-                    VStack {
-                        Spacer()
-                        
-                        ScrollView {
-                            Text(speechManager.recognizedText)
-                                .font(.system(size: 16, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 12))
-                                .padding(.horizontal)
-                        }
-                        .frame(maxHeight: 200)
-                        .animation(.easeInOut(duration: 0.3), value: speechManager.recognizedText)
-                    }
-                }
-                
-                // Control overlay
+                // UI Overlay
                 VStack {
+                    // Top area - Camera switch button
                     HStack {
-                        // Speech recognition controls
-                        VStack(spacing: 8) {
-                            Button(action: {
-                                if speechManager.isRecording {
-                                    speechManager.stopRecording()
-                                } else {
-                                    speechManager.startRecording()
-                                }
-                            }) {
-                                Image(systemName: speechManager.isRecording ? "mic.fill" : "mic")
-                                    .font(.title2)
-                                    .foregroundColor(speechManager.isRecording ? .red : .white)
-                                    .padding()
-                                    .background(.ultraThinMaterial, in: Circle())
-                            }
-                            .disabled(!speechManager.isAuthorized)
-                            
-                            if speechManager.isRecording {
-                                Circle()
-                                    .fill(.red)
-                                    .frame(width: 8, height: 8)
-                                    .scaleEffect(speechManager.isRecording ? 1.0 : 0.0)
-                                    .animation(.easeInOut(duration: 0.5).repeatForever(), value: speechManager.isRecording)
-                            }
-                        }
-                        
                         Spacer()
                         
-                        // Camera switching menu
                         Menu {
                             ForEach(cameraManager.availableCameras, id: \.uniqueID) { camera in
                                 Button(camera.localizedName) {
@@ -99,45 +56,69 @@ struct ContentView: View {
                             }
                         } label: {
                             Image(systemName: "camera.rotate")
-                                .font(.title2)
-                                .foregroundColor(.white)
-                                .padding()
+                                .font(.system(size: 24, weight: .medium))
+                                .foregroundColor(.primary)
+                                .frame(width: 70, height: 70)
                                 .background(.ultraThinMaterial, in: Circle())
                         }
-                        .padding()
+                        .padding(.top, 60)
+                        .padding(.trailing, 40)
                     }
-                    .padding(.top)
                     
                     Spacer()
                     
-                    // Bottom controls
-                    HStack {
-                        // Clear transcription
-                        if !speechManager.recognizedText.isEmpty {
-                            Button("Clear") {
-                                speechManager.clearText()
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(.ultraThinMaterial, in: Capsule())
-                        }
-                        
+                    // Bottom area - Speech recognition
+                    VStack(spacing: 0) {
                         Spacer()
-                        
-                        // Toggle transcription visibility
-                        Button(action: {
-                            showingTranscription.toggle()
-                        }) {
-                            Image(systemName: showingTranscription ? "eye.fill" : "eye.slash.fill")
-                                .font(.title2)
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(.ultraThinMaterial, in: Circle())
+
+                        // Large text display when speech is active
+                        if speechManager.isRecording && !speechManager.recognizedText.isEmpty {
+                            HStack {
+                                Text(speechManager.recognizedText)
+                                    .font(.system(size: 40, weight: .regular, design: .default))
+                                    .foregroundStyle(.primary)
+                                    .multilineTextAlignment(.leading)
+                                    .padding(.horizontal, 40)
+                                    .padding(.vertical, 50)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 40)
+                            .padding(.bottom, 140)
                         }
+
+                        // Bottom controls
+                        HStack {
+                            // Speech/Close button
+                            Button(action: {
+                                if speechManager.isRecording {
+                                    speechManager.stopRecording()
+                                    speechManager.clearText()
+                                } else {
+                                    if speechManager.isAuthorized {
+                                        speechManager.startRecording()
+                                    } else {
+                                        // Use Task to handle async call properly
+                                        Task {
+                                            await speechManager.requestPermissions()
+                                        }
+                                    }
+                                }
+                            }) {
+                                Image(systemName: speechManager.isRecording ? "xmark" : "mic")
+                                    .font(.system(size: 26, weight: .medium))
+                                    .foregroundColor(speechManager.isRecording ? .red : .primary)
+                                    .frame(width: 70, height: 70)
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
+                            .disabled(!speechManager.isAuthorized && !speechManager.isRecording)
+                            .padding(.leading, 40)
+
+                            Spacer()
+                        }
+                        .padding(.bottom, 60)
                     }
-                    .padding(.bottom, 40)
-                    .padding(.horizontal)
                 }
                 
                 // Error message overlay
@@ -149,8 +130,9 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundColor(.white)
                             .padding()
-                            .background(.red.opacity(0.8), in: RoundedRectangle(cornerRadius: 8))
-                            .padding()
+                            .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                            .padding(.horizontal, 30)
+                            .padding(.bottom, 150)
                         
                         Spacer()
                     }

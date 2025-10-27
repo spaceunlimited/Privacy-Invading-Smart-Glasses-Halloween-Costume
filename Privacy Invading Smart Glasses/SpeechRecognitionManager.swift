@@ -89,7 +89,14 @@ class SpeechRecognitionManager: NSObject, ObservableObject {
         }
         
         recognitionRequest.shouldReportPartialResults = true
-        recognitionRequest.requiresOnDeviceRecognition = true // On-device processing
+        // Use on-device recognition if available
+        if let recognizer = speechRecognizer, recognizer.supportsOnDeviceRecognition {
+            recognitionRequest.requiresOnDeviceRecognition = true
+            print("Using on-device speech recognition")
+        } else {
+            recognitionRequest.requiresOnDeviceRecognition = false
+            print("Using server-based speech recognition")
+        }
         
         // Get the audio input node
         let inputNode = audioEngine.inputNode
